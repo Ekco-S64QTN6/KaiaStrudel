@@ -1,0 +1,13 @@
+# KaiaStrudel — install into a venv:
+#   python3 -m venv venv && venv/bin/pip install -r requirements.txt && venv/bin/playwright install chromium
+#   venv/bin/python tools/maintenance/fetch_music_assets.py   (Strudel itself)
+# Pinned to the versions Kaiacord runs (31 Oct 2026); the same Playwright reuses the same Chromium build.
+playwright==1.62.0
+numpy==2.4.1
+pyyaml==6.0.3
+# Tests
+pytest
+pytest-asyncio
+# System: PipeWire or PulseAudio with `pactl` (the set plays into a null sink that ffmpeg
+# captures), ffmpeg, and an audio player for the speakers (pw-cat, paplay, aplay or ffplay).
+# A desktop session: Chromium must run headed (headless Chromium plays pure silence).

@@ -1,0 +1,82 @@
+# KaiaStrudel defaults. STANDALONE-ONLY FILE: the `music:` section is Kaiacord's
+# (config/default_config.yaml), so the same keys mean the same things on both sides.
+# Put your own settings in config/local.yaml (git-ignored); it overrides this file.
+#
+# Kaiacord-only keys kept for parity but unused here: max_concurrent_sessions, the
+# records_* and library/dj_dashboard keys (KaiaBooth uses those).
+
+kaia:
+  # Her mood, which picks the genre when none is named and nudges the tempo: a word
+  # (wired, restless, tired, hollow, bright, heavy, calm, curious) or
+  # {valence: -1..1, arousal: 0..1, energy: 0..1}. Empty: neutral. `--mood` overrides.
+  mood:
+
+music:
+  enabled: true
+
+  # Which genre `!music on` starts with when none is named. One of:
+  # ambient, berlinschool, drumnbass, dub, house, lofi, synthwave, techno, trance
+  default_genre: ambient
+
+  # One stream at a time. Each session is a browser plus an ffmpeg capture.
+  max_concurrent_sessions: 1
+
+  # Show the Strudel editor window instead of parking it off-screen. The window
+  # is the real Strudel REPL: it shows the running code, highlights whichever
+  # pattern is sounding, draws the scope and piano roll, and exposes slider()
+  # controls a human can ride mid-set. Hiding it changes nothing audible — she
+  # narrates every move to the log either way.
+  show_window: true
+
+  # How long to hold the performance while somebody is typing in the editor.
+  # Kaia will not apply her next move over a half-finished human edit, but she
+  # will not wait forever either — an editor left dirty and abandoned would
+  # otherwise freeze the set on one state.
+  human_edit_grace_seconds: 180
+
+  # Loop the capture sink back to this machine's speakers so a human at the
+  # console can hear what is being broadcast. The null sink has no output
+  # attached, so with this off the local machine is silent while Discord hears
+  # the set.
+  monitor_on_speakers: false
+
+  # How long to let the first section come up before Discord starts pulling
+  # frames. Below about four seconds the opening is audibly thin.
+  prime_seconds: 6.0
+
+  # Leave the channel this long after the last human does.
+  alone_grace_seconds: 120
+
+  # `!music records`: the local record library, a dj_catalog.json listing each
+  # file with its BPM, Camelot key and genre (written by the library analysis,
+  # outside this repo). Empty switches records off. Example:
+  #   library_catalog: "~/Music/music/dj_catalog.json"
+  library_catalog: ""
+  # Beats from the incoming record's first downbeat to the outgoing record gone;
+  # the bass swaps halfway. The booth offers 32, 64 and 256 (EPIC: a minute of
+  # both records riding together). Where the beats cannot be laid over each
+  # other, the transition is an eight-bar fade instead.
+  records_mix_beats: 64
+  # Render ahead of Discord's voice callback to absorb brief CPU/GIL stalls.
+  # Frames are 20 ms each; 15 frames buffer about 300 ms (clamped to 3–50).
+  records_audio_buffer_frames: 15
+  # Kaia rides the mixer through a set — gain staging, trading mids and a bass
+  # kill in long blends, EQ gestures into phrases alone — phrase-locked, deeper
+  # with her energy. The booth's HANDS button toggles it for the set.
+  records_kaia_hands: true
+  # A record that clashes in key with the one on air, and fits a semitone up
+  # or down, is shifted that semitone (rubberband) as it comes in.
+  records_key_sync: true
+  # A record stretched to the set's tempo eases back toward its own after it
+  # takes over: 0.5% every 8 bars, spliced on a bar. Off: the opener's tempo
+  # holds all set.
+  records_tempo_glide: true
+  # The DJ booth: a window showing both decks and the mixer while records
+  # play, served on 127.0.0.1 at this port (0 picks a free one) and opened
+  # when a set starts. `!music booth` reopens it.
+  dj_dashboard: true
+  dj_dashboard_port: 47431
+  # The browser the booth opens in (a path or command). Empty: an installed
+  # Chrome, Chromium, Brave or Edge, else Playwright's Chromium.
+  dj_browser: ""
+

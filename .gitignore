@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# runtime data and logs (yours, not the code's)
+memory/
+logs/
+recordings/
+*.wav
+docs/reports/
+config/local.yaml
+# fetched at install time (tools/maintenance/fetch_music_assets.py); Strudel is AGPL and never committed
+assets/strudel/strudel-repl.js
