@@ -324,6 +324,11 @@ carry their own caps (`url_max_content_length`); cutting the whole string cut th
 `MAX_POSTS_PER_DAY`; "for future reference" is recorded, not posted; never from a DM). Only her own act
 counts — "would be flagged", "do you want me to log it" are left alone.
 
+**What her commands are comes from the registry** (`commands_note`): a turn naming a `!` command or asking what her
+commands are carries the registry's lines for them. Asked about `!help` she had called it an internal diagnostic tool.
+The open loop in her "returning" dossier is the speaker's own plan (`open_loops.find`: "i" as its subject, not a
+question, not pasted text); the old patterns kept "want to see it? yes or no?" as Starkind's intention.
+
 ### Direct messages stay private
 
 A DM is answered, but it is logged to `memory/dm_logs/<user id>.md` (`utils/core/dm_log.py`), never to
@@ -355,6 +360,24 @@ The `is_grounded` predicate that selects between them must key on the *source* b
 material — an earlier version matched any `retrieval_method in (vector, bm25, hybrid)`, which is
 true for nearly every turn and silently ran all conversation at 0.35, producing flat and
 sycophantic prose.
+
+### Repeat penalty
+
+**What she writes is sampled with `generation.repeat_penalty` (`gpu_manager.voice_sampling`).** Ollama's runner logs
+`repeat_penalty = 1.000` on every generation unless asked, which is off, and nothing else held a stock phrase or a run of
+fragments back. 144 replayed turns, persona only, 48 at each value (2 Nov):
+
+| Penalty | "a reminder that" | "a …" litany | "the …" run | short-sentence share | words |
+|:--|:--|:--|:--|:--|:--|
+| 1.00 | 31% | 12% | 6% | 0.61 | 118 |
+| 1.05 | 15% | 4% | 6% | 0.60 | 112 |
+| 1.10 | 4% | 0% | 2% | 0.54 | 110 |
+
+This is a sampling option, so it does not reload the runner (`journalctl -u ollama | grep "n_ctx  "` showed none across the
+run). Keep it off JSON extraction and exact recall (`test_voice_sampling.py`): at 1.10 a requested pattern of dots came out
+uneven and code ran longer, and the months and a repeat-after-me stayed right. The persona is not the carrier: a one-line
+system prompt gave the same short-sentence share (0.71 against 0.67), and swapping out "if you can say it in one sentence,
+do so" changed nothing (0.70 both). Guards stay the last resort for what sampling lets through.
 
 ### Output filters
 
@@ -487,6 +510,11 @@ quotes and stage directions keep their lines) and runs in what she sends and in 
 not finished until the logs match it:** her logged turns are retrieved and her recent ones are the template, so
 `tools/maintenance/clean_kaia_turns.py` runs the same filters over her turns in `user_logs/`, channel memory and
 her board posts (a person's turns are never touched; it refuses while the bot runs), then reindex.
+On 2 Nov a half-sentence copied from a quip, "the thing about those old…", stood in ten replies in a morning (five words:
+under the six-word key, and no stock vocabulary), and "the cycles of decline. the patterns of collapse." runs reached 38%
+of her replies (under 2% before mid-October). `detemplate_history` drops any short line she has used twice in the window
+(`_short_line_key`) and collapses a run of three or more short verbless "the …" sentences (`_the_fragment`), in what she is
+shown only: "the echoes resonate." is a clause the auxiliary check cannot see, so nothing here touches what she sends.
 **She addresses whoever is talking to her** (`correct_addressee`): every name she uses to address someone
 in the channel is put right to the message's author unless they brought the other person up, all of the
 author's names counting (GuardNGnowm is GnowmaticFlux's nickname), and her past turns are shown without the
@@ -826,9 +854,13 @@ a mix that sounded wrong:
   Which gesture is a hash of record and phrase, never random. Until 24 Oct she killed the bass for the
   beat before every swap and gestured into every phrase, snapping back on the one — Ekco: "first five
   minutes with a mixer". Subtle is the rule: a move she makes every time is a habit, not a move.
-- **Blend only two steady beats** (`BLEND_CONTRAST`): four-on-the-floor measures ≥ 4.2 where it is
-  mixed, rock, breaks and sparse intros 1.8–3.3. Anything less, or an uncounted bar, is not proposed as a
-  blend (it goes out as an echo). Steadiness only proposes a blend; `mixcheck` decides it.
+- **Blend only two steady beats.** Both records' beats tracked (`Grid.tracked`, the Essentia ticks): any
+  beat whose ticks run straight is proposed, whatever its onset contrast or bar count — breakbeats included.
+  A record not yet ticked falls back to the onset grid: contrast under `BLEND_CONTRAST` (3.5;
+  four-on-the-floor measures ≥ 4.2 where it is mixed, rock, breaks and sparse intros 1.8–3.3) or an
+  uncounted bar goes out as an echo ("beat not steady enough", most often a fresh hand load). Steadiness
+  only proposes a blend; `mixcheck` decides it. The journal's `contrast`/`bar_known` are the onset grid's,
+  so a tracked blend there with contrast 1.5 is not a bypass.
 - **Check a change on click tracks** through the real `CrossfadeSource` (the incoming first kick must
   land on the planned bar, kicks within a few ms) — a beat detector on real music is not a reliable
   judge of another beat detector.
@@ -961,6 +993,8 @@ is a novelty, not a live feed), one request at a time, with the identifying User
 traffic". EAMs and number-station groups are encrypted: nothing Kaia says may claim to decode
 one. Research: `docs/reports/investigations/2026-09-24-shortwave-feasibility.md`.
 
+An unsquelched recording that came back in pieces is one broadcast (`watch.stitch`): a KiwiSDR reconnect starts a new file, and one E11 was five posts. Squelched files stay separate, each is a transmission.
+
 A number-station recording is kept only for a keyed tone (`watch.keyed_tone`: prominent within the
 recording's own passband, and switching on and off) or speech. Measured against the whole speech
 band, CW mode's narrow filter made pure static look tonal, and a steady carrier passed as a tone.
@@ -1017,9 +1051,36 @@ it, and classifies it — voice, data, carrier or noise — into `memory/radio/l
   carriers and each spent a transcription. `waterfall.is_packet` (the 1200/2200 Hz pair in ≥ 45% of
   ≥ 10 carrier frames; off-air packets 52–62%, hiss 0%, voice at most 36%, a Morse ID too short)
   files them as `data` before Whisper is asked. The band notebook uses the same measure.
-- **Only what is worth hearing keeps a clip:** voice, a net, and a carrier that sounds like speech (a
-  spoken or Morse ID, or words Whisper missed). A Morse ID (`scanner.morse_id`) is kept once per
-  channel per six hours; 145.690's node sends one every few minutes.
+- **Only what is worth hearing keeps a clip:** voice, a net, a Morse ID, a reply too short to call voice
+  (`scanner.short_reply`: "Yes, sir."; not a sign-off Whisper invents, not the prompt read back), and a
+  speech-like carrier Whisper was *not asked* about. Asked and hearing nothing, it is not speech: the 900 MHz
+  hoppers and 462.275's telemetry pass `voice_like`, and were kept and highlighted as "sounded like speech".
+  A Morse ID (`scanner.morse_id`) is kept once per channel per six hours; 145.690's node sends one every few
+  minutes. Clips rotate at 300, so a junk clip pushes out a real one.
+- **Speech is transcribed out of its own allowance.** A catch `voice_like` passes spends `SPEECH_PER_NIGHT`
+  (400); everything else spends `TRANSCRIBE_PER_NIGHT` (60), which finds a channel's first words. One shared 60
+  ran out about 01:30 every night and the rest of the night's dispatch — 50–90 calls — went in as carriers.
+  A transcription costs 2–10 s of CPU in int8 (`transcribe.COMPUTE_TYPE`). float32 read dispatch slightly better
+  (29 of 37 street names against 27) but held ~6 GB all night — busy dispatch never lets the 15-minute idle unload
+  fire — and that RAM matters more than the street names (Ekco, 1 Nov).
+- **Dispatch street names are put right against a local street list** (`streets.correct`, via `scanner.fix_streets`;
+  ham bands are not touched). The list is a deployment fact: `tools/maintenance/fetch_street_names.py "<area>"
+  --write` builds git-ignored `memory/radio/streets.json` from OpenStreetMap; without it nothing changes. A name
+  the list lacks, right before its type, becomes the one street of that type it sounds like ("Cockroach Hill
+  Road" → Cockrell Hill Road ×8). Rules, each from reading every change over 659 real transcripts: never an
+  English word, a direction or a type word ("Avenue" → Avon, "First" → Vista); sound skeleton ≥ 0.8, mean of
+  sound and spelling ≥ 0.79; the same syllable count ("Condo" → Coronado, "Levar" → Lear are refused); no
+  spacing-only fix; lowercase comma-broken spans left alone. A known tail ("Hill") only blocks a fix of a
+  different length. Single-word fixes need nltk's word list; a standalone without it fixes phrases only.
+  `ledger_repair.py --streets` applies it to transcripts already logged.
+- **A catch is filed where its carrier is** (`waterfall.carrier_freq`): the centroid of the power summed
+  while the hold was keyed, not the trigger's smoothed peak rounded to 2.5 kHz, which a voice's deviation moves
+  by kilohertz. Nearly every busy channel had a "shadow" row 6.25 kHz up (Dallas dispatch: 354 voice catches on
+  460.575, 257 on 460.58125). Measured 31 Oct: 858 key-ups on both UHF spans at 293 Hz all sat within 470 Hz of
+  the busier row. Cooldowns stay keyed on the trigger frequency; a tuned channel is filed where it was tuned.
+  The dongle reads ~+2 ppm (NOAA 162.400/162.550, 460.575): under a kilohertz, so `radio.local.ppm` can stay 0.
+  `tools/maintenance/ledger_repair.py` (dry run unless `--apply`) folds split rows and re-judges kept carrier
+  clips after a change to either rule.
 - **Listeners hear a transmission, never the sweep.** Nothing is sent while hopping (a tick per hop
   played as pops), and a hold reaches the monitor and a listen-along through `waterfall.Squelch`: open
   only where a carrier ran `OPEN_S` (0.4 s), output delayed by that much so the over is heard from its
@@ -1147,7 +1208,11 @@ mute, and is not judged.
   Norwegian subtitle credit three times in an hour. The scanner transcribes in English through
   `transcribe.transcribe_speech`, which keeps only segments Whisper scores as speech. Human repeater
   voice has not yet been measured against the 90% bar; NOAA scored 100% on every sentence present in
-  the NWS text.
+  the NWS text. The passes live in one place, `scanner.hear` (classify and `ledger_repair.py` both call
+  it): strict, then plain for a speech-like catch, then — only if both heard nothing — any language
+  without the prompt, counted only at `ANY_LANGUAGE_MIN_WORDS` (6). Forced English returned nothing for
+  the Spanish conversations on 462.150/463.825; a short invention ("I don't know." on a 927 MHz hopper)
+  stays out.
 - **The Quansheng UV-K5** (`tools/maintenance/uvk5.py`) is a handheld, not an SDR: it demodulates one
   channel inside the radio and sends no IQ, so it cannot feed the scanner or KAIA//RX. The tool is
   read-only — find the cable, firmware version, EEPROM backup (calibration at 0x1E00–0x1FFF; take one
@@ -1245,6 +1310,11 @@ the last label used in that channel. An observation is always an Observation. Tu
 against `utils/core/unprompted._leans`, and keep `test_descriptive_labels_are_only_worn_when_earned`
 passing: "Unspooling" on a post that questions nothing stops meaning anything.
 
+**A post of her own has nobody to echo.** `message_processor.UNADDRESSED_PLATFORMS` (the quip, the overnight log):
+the "message" there is her own thought or the facts she was given, so `strip_echoed_query`, `strip_restatements`,
+`correct_addressee` and `correct_vocative_name` do not run. They were cutting the sentences that used the facts,
+and addressing strangers as "kaia".
+
 **A reply to an unprompted post is addressed to her.** `speak` marks the post `unprompted: True` in
 channel memory, and the reply context names no recipient for it. It used to fall back to the last
 person who spoke before the post, quoted it as "Kaia (replying to Ekco)", and she answered
@@ -1318,9 +1388,11 @@ feature has one code path whether it is clicked or typed.
   running; the suite had no such guard. If you add a component that persists anything, redirect
   it here first. The TTRPG world state was not: every run saved the test's `test_storm` /
   `atk_mod: -5` over `memory/ttrpg/world_state.json`, and every player fought at -5 until the
-  next dawn tick; it goes through `telemetry_path()` now. To check the whole suite at once, run it under a `sys.addaudithook` that
-  records `open` in a write mode, `os.replace`/`os.remove` under `memory/`, `knowledge_base/`
-  and the production log, attributed per test; anything without `.test` in its path is a leak.
+  next dawn tick; it goes through `telemetry_path()` now, and so does `bot_state.json`, whose module-level instance every test
+  shared: until 2 Nov a `pytest` run wrote test state over her channel memory and relationships, harmless only because
+  a running bot saves over it. `tools/tests/live_write_guard.py` now holds the whole suite to this: an audit hook sees
+  every write under `memory/`, `knowledge_base/` and `logs/`, and a run with one outside a `.test` path fails and names
+  the test.
 - Elevate core cognitive actions (monologue, dream summaries, belief shifts, anchor formation),
   scraper operations, and mood changes to `log_info`/`log_warning` so they surface in the
   dashboard.
@@ -1613,6 +1685,10 @@ diagnosis (`DIAGNOSIS`: "likely driven by a desire for control", "on the edge of
 An anchor whose text names one person she knows is theirs, whatever the model put in its user field,
 and retrieval never recalls a global anchor naming someone else to the person she is talking to; an
 anchor written as a report of a source ("The author is struck by…") is not kept.
+A full belief store keeps what she just thought (`beliefs_store.evict_weakest`): a new belief starts at
+`NEW_BELIEF_CONFIDENCE` and every older one scores higher, so the weakest was always the one just written. From 23 Oct
+each new belief evicted itself and "New Belief Formed" was logged anyway. For `PROTECT_NEW_S` a belief is not up for
+eviction; after that one she reached only once fades unless she recalls it or reaches it again.
 
 `knowledge_base/kaia_dreams/` is its own RAG index, and `context_optimizer` labels what is
 retrieved from it **INTERNAL REFLECTION (DREAM)** — as something Kaia thought — except an
