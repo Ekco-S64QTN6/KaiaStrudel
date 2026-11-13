@@ -35,11 +35,42 @@ def _cfg(key: str, default):
     except Exception:
         return default
 
+async def _await_worker_completion(task: asyncio.Task):
+    """Drain a worker task even when the calling coroutine is cancelled."""
+    while True:
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done():
+                return task.result()
+
+
+async def _acquire_monitor_lease() -> bool:
+    """Acquire the speaker loopback without leaking it on startup cancellation.
+
+    Cancelling asyncio.to_thread() does not stop its underlying thread. Keep
+    the worker shielded, and if the caller is cancelled, wait for its result
+    and release any lease it acquired before propagating cancellation.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(monitor_to_speakers, True))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        try:
+            acquired = await _await_worker_completion(worker)
+            if acquired:
+                release = asyncio.create_task(asyncio.to_thread(monitor_to_speakers, False))
+                await _await_worker_completion(release)
+        except Exception as exc:
+            log_warning(f"[music] speaker monitor cleanup after startup cancellation failed: {exc}")
+        raise
+
 
 class MusicSession:
     def __init__(self, vc: discord.VoiceClient, engine: StrudelEngine,
                  source: StrudelAudioSource, perf: TrackPerformance,
-                 genre: str, requested_by: str, text_channel=None):
+                 genre: str, requested_by: str, text_channel=None,
+                 monitor_on_speakers: bool = False):
         self.vc = vc
         self.engine = engine
         self.source = source
@@ -49,6 +80,7 @@ class MusicSession:
         self.text_channel = text_channel
         self.started_at = time.time()
         self._closing = False
+        self._monitor_on_speakers = bool(monitor_on_speakers)
         self._alone_since: float | None = None
         self._restore: tuple[float, list[str]] | None = None
         self.listeners_seen: set[str] = set()
@@ -108,7 +140,7 @@ class MusicSession:
                 # show_window on that is a normal thing to do. Treat it as "end
                 # the set", not as a pattern failure — otherwise the session
                 # stays up streaming silence and logs an error every tick.
-                if not self.engine.alive():
+                if not await asyncio.to_thread(self.engine.alive):
                     if self.text_channel:
                         try:
                             await self.text_channel.send(
@@ -197,7 +229,13 @@ class MusicSession:
     async def _next_pass_at(self, delay: float) -> None:
         try:
             await asyncio.sleep(max(0.0, delay))
-            if self._closing or self._held_for_human():
+            if self._closing:
+                return
+            if await self._held_for_human():
+                return
+            # The editor query is off-thread and can outlive stop(). Recheck
+            # lifecycle ownership before mutating the performance or browser.
+            if self._closing:
                 return
             self.perf.next_pass()
             if await self._push():
@@ -205,20 +243,21 @@ class MusicSession:
             else:
                 log_warning("[music] the next pass was rejected; holding the current one.")
         finally:
-            await asyncio.sleep(1.0)
-            self._pass_task = None
+            if not self._closing:
+                await asyncio.sleep(1.0)
+            if getattr(self, "_pass_task", None) is asyncio.current_task():
+                self._pass_task = None
 
-    def _held_for_human(self) -> bool:
-        """Pause the script while the editor has unapplied human changes."""
+    async def _held_for_human(self) -> bool:
+        """Pause while the editor has unapplied changes without blocking the loop."""
         try:
-            if not self.engine.human_edited():
-                self._held = 0
-                return False
+            edited = await asyncio.to_thread(self.engine.human_edited)
         except Exception:
             return False
+        if not edited:
+            self._held = 0
+            return False
         self._held = getattr(self, "_held", 0) + 1
-        # Do not wait forever: if the editor is left dirty and abandoned, the
-        # performance would freeze on one state for the rest of the session.
         if self._held * WATCHDOG_PERIOD_S > float(_cfg("human_edit_grace_seconds", 180)):
             log_info("[music] resuming the script; the editor has been left dirty.")
             self._held = 0
@@ -240,23 +279,46 @@ class MusicSession:
             return
         self._closing = True
         _sessions.pop(self.guild_id, None)
-        for step, what in (
-            (lambda: self.engine.stop(), "stop pattern"),
-            (lambda: self.vc.is_playing() and self.vc.stop(), "stop playback"),
-            (lambda: self.source.cleanup(), "cleanup source"),
-            (lambda: self.engine.close(), "close engine"),
-        ):
+
+        # Stop session-owned coroutines before retiring the engine they use.
+        # A scheduled pass can be waiting on an off-thread editor query.
+        current = asyncio.current_task()
+        for attr in ("_pass_task", "_task"):
+            task = getattr(self, attr, None)
+            if isinstance(task, asyncio.Task) and task is not current and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        # Playwright, FFmpeg and capture-thread teardown can wait; never run it
+        # synchronously on Discord's event loop.
+        try:
+            await asyncio.to_thread(self.engine.stop)
+        except Exception as exc:
+            log_debug(f"[music] stop pattern: {exc}")
+        try:
+            if self.vc.is_playing():
+                self.vc.stop()
+        except Exception as exc:
+            log_debug(f"[music] stop playback: {exc}")
+        try:
+            await asyncio.to_thread(self.source.cleanup)
+        except Exception as exc:
+            log_debug(f"[music] cleanup source: {exc}")
+        try:
+            await asyncio.to_thread(self.engine.close)
+        except Exception as exc:
+            log_debug(f"[music] close engine: {exc}")
+
+        if self._monitor_on_speakers:
+            self._monitor_on_speakers = False
             try:
-                step()
+                await asyncio.shield(asyncio.to_thread(monitor_to_speakers, False))
             except Exception as exc:
-                log_debug(f"[music] {what}: {exc}")
+                log_debug(f"[music] speaker monitor release: {exc}")
         try:
             await self.vc.disconnect(force=True)
         except Exception as exc:
             log_debug(f"[music] disconnect: {exc}")
-        task = self._task
-        if task and not task.done() and task is not asyncio.current_task():
-            task.cancel()
         minutes = (time.time() - self.started_at) / 60
         log_action(f"[music] session ended after {minutes:.1f} min.")
         await self._remember(minutes)
@@ -332,6 +394,7 @@ async def start_session(channel, *, genre: str, requested_by: str,
     vc = None
     connected_here = False
     played_here = False
+    monitor_acquired = False
     session = None
     try:
         # Startup owns all resources from this point until the session is
@@ -341,7 +404,9 @@ async def start_session(channel, *, genre: str, requested_by: str,
         from utils.audio.strudel_patterns import warmup_program
         await loop.run_in_executor(None, engine.warm_up, warmup_program())
         if _cfg("monitor_on_speakers", False):
-            monitor_to_speakers(True)
+            monitor_acquired = await _acquire_monitor_lease()
+            if not monitor_acquired:
+                log_warning("[music] local speaker monitor could not be enabled")
 
         perf = build_for_mood(genre)
         await loop.run_in_executor(None, engine.play, perf.code())
@@ -373,7 +438,9 @@ async def start_session(channel, *, genre: str, requested_by: str,
                 signal_type="music")          # see records.OPUS_SIGNAL
         played_here = True
 
-        session = MusicSession(vc, engine, source, perf, genre, requested_by, text_channel)
+        session = MusicSession(vc, engine, source, perf, genre, requested_by, text_channel,
+                                monitor_on_speakers=monitor_acquired)
+        monitor_acquired = False      # the session now owns this lease
         _sessions[guild_id] = session
         log_action(f"[music] '{genre}' started in {channel.name} for {requested_by}.")
         return session
@@ -411,6 +478,11 @@ async def start_session(channel, *, genre: str, requested_by: str,
                         await vc.disconnect(force=True)
                 except BaseException as cleanup_exc:
                     log_warning(f"[music] startup voice disconnect failed: {cleanup_exc}")
+            if monitor_acquired:
+                try:
+                    await asyncio.to_thread(monitor_to_speakers, False)
+                except BaseException as cleanup_exc:
+                    log_warning(f"[music] startup speaker monitor release failed: {cleanup_exc}")
         raise
 
 
