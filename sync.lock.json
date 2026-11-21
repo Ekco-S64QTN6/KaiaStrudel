@@ -3,7 +3,7 @@
  "tools/maintenance/audition_tracks.py": "52d9bbdbd8b598bcf4a3dc71d0271918c2d08364ec460dfa5bc6704d10894e0a",
  "tools/maintenance/fetch_music_assets.py": "9b8613619ecdde816cb6541b2ff0603d483f137b997306fbde4211e815a399bd",
  "tools/tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
- "tools/tests/conftest.py": "44c1652eaad5de5bbece3050b8d6bdc4570a0deea7e4c19b3be814c509402521",
+ "tools/tests/conftest.py": "c5a04a5f5153b9cf430e6c5c965db866168e817532060e266fb7c9ea3e22ffa0",
  "tools/tests/unit/__init__.py": "9a4a1d0d63dbdc242b4536d00334837ec3c459a6ee5f81ca31688ef48312559c",
  "tools/tests/unit/test_music_tracks.py": "cd7066f30421d7a1c0e0c6bb1fffe8943dc2b582d3d2caf5cfb9c863ef175267",
  "tools/tests/unit/test_process_lifecycle.py": "51fb824f94bf0ce107ad35377fe4441e902f24c3b0bf72e5d89ff2a3da3564f0",

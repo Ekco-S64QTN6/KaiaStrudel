@@ -91,17 +91,17 @@ so a mis-marked test fails fast instead of loading a model:
 
 | Workflow | Runs |
 |:--|:--|
-| `unit-tests.yml` | every PR and push to `main`: `.github/scripts/run_ci_tests.py` — `compileall` over `utils/` and `tools/`, the hygiene baseline (`test_suite_hygiene`, `test_chat_model_calls`, `test_no_shadowed_imports`, `test_no_undefined_globals`), plus the tests for what the diff touched (`test_<stem>.py`, every test file that imports the changed module — skipped for one imported by more than `MAX_IMPORTERS` — `RELATED_TESTS`, all of `tools/tests/unit/ttrpg/` for a `utils/ttrpg/` change) |
+| `unit-tests.yml` | every push to `main`: `.github/scripts/run_ci_tests.py` — `compileall` over `utils/` and `tools/`, the hygiene baseline (`test_suite_hygiene`, `test_chat_model_calls`, `test_no_shadowed_imports`, `test_no_undefined_globals`), plus the tests for what the diff touched (`test_<stem>.py`, every test file that imports the changed module — skipped for one imported by more than `MAX_IMPORTERS` — `RELATED_TESTS`, all of `tools/tests/unit/ttrpg/` for a `utils/ttrpg/` change) |
 | `ttrpg-tests.yml` | Full `tools/tests/unit/ttrpg/` suite when `utils/ttrpg/**`, `tools/tests/unit/ttrpg/**`, or the workflow file changes; also supports manual dispatch |
 | `records-audio-tests.yml` | `test_records.py` when `utils/audio/records.py` changes |
-| `quality.yml` | every PR and push to `main`: `ruff check .` (error rules), then `tools/maintenance/type_ratchet.py` |
+| `quality.yml` | every push to `main`: `ruff check .` (error rules), then `tools/maintenance/type_ratchet.py` |
 | `dependency-audit.yml` | weekly and on a `requirements.txt` change: `pip-audit`, report-only |
 
 `unit-tests.yml` also collects coverage from the tests it selected and fails when under 20% of
 the statements a change adds to `utils/*.py` ran (`tools/maintenance/changed_line_coverage.py`).
 
 A green check is therefore not a green suite: run the full no-external-services invocation
-locally before merging anything wider than one module. Tests named by behaviour are found by
+locally before pushing anything wider than one module. Tests named by behaviour are found by
 what they import; a test that reaches a module only indirectly still needs a `RELATED_TESTS`
 entry. Until 6 Nov only the file name was matched, and three `kaia_rag_query` tests failed on main
 for a week with every check green. CI
@@ -477,16 +477,22 @@ two"; a question, a shared link or picture, and anything that offers room (a req
 against the live model with real retrieval, 24 asides went from a median of 52 words to 16 with her
 voice intact. The same note on short questions was tried and dropped: 3 of 12 replies came back
 capitalised or in assistant phrasing, and scene questions went flat. Do not add length advice to another injection; the hour's note is
-tone only. A new cue that should offer room goes in `_INVITATION`, checked against her logs first. Ekco reversed his 12 Nov removal on 13 Nov: replies had become long again (a forwarded post she could not read drew 448 words), and "a line or two" on passing remarks had worked before.
+tone only. The conversational-fatigue note ("your responses should be getting shorter" from
+a session's fifteenth message) was removed on Ekco's word, 21 Nov: it was on 41 of 85 replies on 18 Nov, the day
+Starkind said she seemed off. A new cue that should offer room goes in `_INVITATION`, checked against her logs first. Ekco reversed his 12 Nov removal on 13 Nov: replies had become long again (a forwarded post she could not read drew 448 words), and "a line or two" on passing remarks had worked before.
 
 **What she can't see or can't place, she is told beside the message** (`utils/core/grounding_notes.py`). Asked
 about a picture that never reached her, she described a sunset three times in three; asked who said an invented line,
 she named Charles Simic, Heraclitus and a Snow Crash character. The CORE RULES block forbade both, and without that
 block she also claimed to run on Claude and Gemini, so it stays; but a rule at the end of an eleven-thousand-token
 system prompt is not what she reads. The note goes on the user message when no picture loaded for the turn (a failed
-load keeps the vision note, Q40) or when a quoted line she is asked to attribute is in nothing she was given. Replayed
+load keeps the vision note, Q40; a picture among the last six user turns is the one meant, so no note) or when a
+quoted line she is asked to attribute is in nothing she was given. Replayed
 (`tools/maintenance/replay_turns.py --probes`, three seeds): 0/3 to 3/3 on both, Gibson and Shakespeare still named.
 A note that only said "never guess a name" made her forget Hamlet; keep the escape for lines everyone knows.
+A link that answers with only a browser check (a `share.google` link: "If you're having trouble accessing Google
+Search…") counts as a page that would not load (`context_enricher._is_shell_page`); handed the notice as the page,
+she described what it "categorises" (14 Nov).
 
 **A clipped follow-up is tied to the question it follows** (`utils/core/followup_note.py`). Cecily asked what was
 distinctive about someone's way of talking, then said "do me next", and she analysed herself (12 Nov). Replayed, the
@@ -668,8 +674,10 @@ Rules that follow:
 
 - Any guard that excises inside a sentence must call
   `response_filter.excision_broke_grammar(before, after)` and keep the original when it returns
-  True. Shipping the offence beats shipping a sentence with a hole in it. It checks two shapes:
-  an article stranded by what followed it, and a token in the output that was not in the input —
+  True. Shipping the offence beats shipping a sentence with a hole in it. It checks an article
+  stranded by what followed it, a linking verb stranded by its complement, a quotation emptied or
+  left open (`than simply saying "you're right."` shipped as `than simply saying "`: quoted, the
+  phrase is mentioned, not said), and a token in the output that was not in the input —
   an excision can only remove tokens, so a new one means the cut fused its neighbours
   (`the core directive: understanding` → `theunderstanding`, which has no stranded article in it).
 - **A leak pattern must match the diagnostic form, not the English.** `DIRECTIVE_LEAK_PATTERNS`
@@ -727,8 +735,11 @@ and a bracketed stage direction is hers. The same note copied out of the prompt,
 starkind)", headed every reply by 16 Oct, and reworded ("(solely addressing starkind)") 61 replies on 3–4 Nov;
 `strip_address_tag` takes it out of what she sends and what she is shown. An opening she reuses is keyed on its
 first three words (`_opener_key`): "it's funny how …" opened 27 of 33 replies to Starkind on 8 Nov, each copied from
-the last. Her shown turns lose it at two uses in the window, what she sends at three of her last six
-(`strip_repeated_opening`), with any sentence that only continued it, and never when what remains could not stand. Her paragraphs fragmented too — 2.3 a reply of ~32 words in early September, 5.4 of ~19 by mid-October —
+the last. A verdict ("it's striking, isn't it?", "that's… remarkably precise.", "it's a refinement, then.") is one
+key whatever its adjective (`VERDICT_KEY`, by vocabulary: "it's a pdf." answers): replies opening on "it's" went from
+6% in early September to 36% on 16–20 Nov, and Starkind called the preamble repetitive (18 Nov). Her shown turns lose
+an opening at two uses in the window, what she sends at three of her last six (`strip_repeated_opening`), with any
+sentence that only continued it (after a verdict, only an "and …" tail), and never when what remains could not stand. Her paragraphs fragmented too — 2.3 a reply of ~32 words in early September, 5.4 of ~19 by mid-October —
 and `reflow_paragraphs` joins short prose paragraphs back together. From 16 Oct the cadence came back as
 litanies — "a pattern identified. a tendency observed. a habit acknowledged." — in 38% of replies (none before
 October); `collapse_litany` keeps the first two of a run of three or more "a …" fragments made of her stock
@@ -1048,7 +1059,7 @@ KAIA//RX or the avatar engine.** The rules that are easy to break:
   deployment facts in config, never in code or tracked docs.
 - Whisper `large-v3` on CPU in int8, English, `transcribe_speech` passes only. Smaller models, raw audio
   and the VAD filter all hallucinated on HF/FM audio; don't switch without re-running the comparison.
-- **The scanner's watcher runs in a forked child** (fds 1/2 on /dev/null, `PR_SET_PDEATHSIG`), drives
+- **The scanner's watcher runs in a forked child** (fds 1/2 on /dev/null, default SIGTERM restored before `PR_SET_PDEATHSIG`: the bot's inherited handler swallowed both), drives
   librtlsdr through ctypes, and holds the one dongle. A wedged read ends the watcher, never the handle.
 - Test scanner coverage with the simulated dongle (`test_local_scanner.py`), and look at a KAIA//RX
   change with `tools/maintenance/rx_preview.py`, not the bot.
@@ -1804,6 +1815,11 @@ from the registry in seconds and touches nothing else, so run that whenever
 - Areas: `ttrpg`, `fishing`, `combat`, `housing`, `alchemy`, `core`, `docs`, `config`, `kaia`,
   `art`, `music`, `infra`, `social`
 - One logical change per commit; don't mix balance changes with bug fixes.
+- **Commit on `main` and push straight to `origin main`.** No feature branches, no pull requests,
+  no waiting on CI: Ekco is the only developer, and the `main-protection` ruleset was disabled on
+  21 Nov 2026 for that reason. CI still runs on the push; read the run if it fails.
+- Add files by name. `git commit -a` swept Ekco's uncommitted `config/kaia.yaml` into a pushed
+  commit (21 Nov); `config/` and `memory/` are never committed by an agent.
 
 ---
 
@@ -1839,7 +1855,7 @@ it here.
 | Radio, scanner, KAIA//RX | `docs/03-architecture/radio.md` — **read before touching `utils/radio/`** |
 | Corpus layout | `knowledge_base/README.md` — **read before adding a folder** ([§10](#10-knowledge-base)) |
 | Shell tooling | `scripts/README.md` — what `kaia-tools.sh` exposes |
-| Contributing | `CONTRIBUTING.md` — human-facing PR workflow |
+| Contributing | `CONTRIBUTING.md` — PR and issue workflow for outside contributors |
 
 > `docs/reports/` is **git-ignored** — it contains transcript excerpts and runtime telemetry. It
 > exists in a working checkout but not on GitHub, so do not link it from tracked documentation.
